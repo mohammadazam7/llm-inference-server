@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Checkpoints, load-test output and benchmark runs
+checkpoints/
+runs/
+*.pt
+
+.env
+.DS_Store
+.idea/
+.vscode/
