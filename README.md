@@ -44,6 +44,29 @@ flowchart LR
 In its last milestones the server loads and serves checkpoints trained by
 [tiny-llm](https://github.com/mohammadazam7/tiny-llm).
 
+## The baseline, in simulated time
+
+The first number to beat: one request at a time, on a simulated model where each forward
+pass costs 10 ms plus 2 ms per sequence in the batch. 200 requests arrive at random
+(Poisson), each with a 16 to 128 token prompt and 16 to 256 new tokens. Reproduce any row
+with `llm-loadtest --rate <rate>`.
+
+| Arrival rate | Throughput | TTFT p50 | TTFT p95 | Latency p95 |
+|---|---|---|---|---|
+| 0.25 req/s | 32.2 tokens/s | 0.012 s | 2.5 s | 4.4 s |
+| 0.5 req/s | 62.8 tokens/s | 1.7 s | 7.8 s | 10.1 s |
+| 0.6 req/s | 72.7 tokens/s | 4.2 s | 14.0 s | 15.6 s |
+| 1 req/s | 83.1 tokens/s | 42.4 s | 98.4 s | 101.4 s |
+| 2 req/s | 83.3 tokens/s | 100.6 s | 196.1 s | 199.1 s |
+
+Throughput stops at 83.3 tokens/s, one token per 12 ms step, because the baseline only
+ever runs a batch of one. A request needs about 1.6 s of model time on average, so above
+roughly 0.6 requests per second the queue grows without limit and time to first token
+is mostly waiting. That ceiling is what continuous batching (M2) is meant to lift.
+
+These are simulated times from the cost model above, not measurements of real hardware.
+Real numbers come when the server runs tiny-llm checkpoints.
+
 ## Honest limits
 
 There is no GPU here. All measurements are on a CPU with small models, and each results
