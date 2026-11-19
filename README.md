@@ -5,9 +5,9 @@ what the standard serving techniques buy: continuous batching, a paged key-value
 INT8 quantization and token streaming. Every technique is compared against a naive
 server that handles one request at a time, on the same hardware and the same load.
 
-> **Status:** design stage. The design doc and roadmap are written; the naive baseline
-> and the load-test harness come first, because nothing else can be measured without
-> them. No throughput or latency figure appears here until the harness has produced it.
+> **Status:** milestone 1. The naive baseline, the load-test harness and the streaming
+> HTTP API are in place; batching comes next. No throughput or latency figure appears
+> here until the harness has produced it.
 
 ## Why
 
@@ -66,6 +66,33 @@ is mostly waiting. That ceiling is what continuous batching (M2) is meant to lif
 
 These are simulated times from the cost model above, not measurements of real hardware.
 Real numbers come when the server runs tiny-llm checkpoints.
+
+## The HTTP API
+
+`llm-serve` runs the baseline behind `POST /v1/generate`, with the simulated model
+sleeping for its step cost so the server takes real time like a real model would:
+
+```bash
+pip install -e ".[serve]"
+llm-serve --port 8000
+curl -N localhost:8000/v1/generate -H "content-type: application/json" \
+  -d '{"prompt": [1, 2, 3], "max_new_tokens": 5, "stream": true}'
+```
+
+```text
+event: token
+data: {"index": 0, "token": 149}
+...
+event: done
+data: {"tokens": 5, "finish_reason": "length"}
+```
+
+Without `"stream": true` the reply is one JSON body, `{"tokens": [...], "finish_reason":
+"length"}`. Prompts are token ids for now; text goes in once tiny-llm's tokenizer is
+wired up. Requests queue for the model in arrival order. If a client disconnects
+mid-stream, the model is released at the next token it fails to deliver rather than
+running to `max_new_tokens` for nobody; `GET /v1/stats` counts served and cancelled
+requests.
 
 ## Honest limits
 
