@@ -4,7 +4,7 @@ Target: v1.0 between **Jan 8 and Jan 10, 2027**. Each milestone ends with a pull
 request, a tagged release and a changelog entry.
 
 - [x] **M0 (Nov 16): foundation.** Repository, CI, design doc, roadmap.
-- [ ] **M1 (Nov 17 to 27): baseline and measurement.** The model runtime interface, a
+- [x] **M1 (Nov 17 to 27): baseline and measurement.** The model runtime interface, a
   naive one-request-at-a-time server, token streaming over server-sent events, and the
   load-test harness (time to first token, tokens per second, p50 and p95).
 - [ ] **M2 (Nov 28 to Dec 9): continuous batching.** A step-level scheduler that admits
