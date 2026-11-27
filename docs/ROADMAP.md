@@ -7,7 +7,7 @@ request, a tagged release and a changelog entry.
 - [x] **M1 (Nov 17 to 27): baseline and measurement.** The model runtime interface, a
   naive one-request-at-a-time server, token streaming over server-sent events, and the
   load-test harness (time to first token, tokens per second, p50 and p95).
-- [ ] **M2 (Nov 28 to Dec 9): continuous batching.** A step-level scheduler that admits
+- [x] **M2 (Nov 26): continuous batching.** A step-level scheduler that admits
   and retires requests while the batch runs, tested with a fake runtime and measured
   against the baseline and static batching.
 - [ ] **M3 (Dec 10 to 19): paged KV cache.** Fixed-size blocks from a shared pool with a
