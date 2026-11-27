@@ -36,6 +36,7 @@ class Completion:
     started: float
     first_token: float
     finished: float
+    cancelled: bool = False
 
     @property
     def time_to_first_token(self) -> float:

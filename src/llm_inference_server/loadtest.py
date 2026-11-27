@@ -19,10 +19,12 @@ import math
 import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 
 from llm_inference_server.baseline import Completion, Request, serve_one_at_a_time
 from llm_inference_server.clock import VirtualClock
 from llm_inference_server.runtime import SimulatedRuntime
+from llm_inference_server.scheduler import serve_continuous, serve_static_batches
 
 Server = Callable[[SimulatedRuntime, Sequence[Request], VirtualClock], list[Completion]]
 
@@ -152,14 +154,50 @@ def run(
     return report(completions)
 
 
-SERVERS: dict[str, Server] = {"one-at-a-time": serve_one_at_a_time}
+SERVERS = ("one-at-a-time", "static-batch", "continuous")
+
+
+def server(name: str, max_batch: int = 8) -> Server:
+    """The server called ``name``; the batching ones hold at most ``max_batch`` sequences."""
+    if name == "one-at-a-time":
+        return serve_one_at_a_time
+    if name == "static-batch":
+        return partial(serve_static_batches, batch_size=max_batch)
+    if name == "continuous":
+        return partial(serve_continuous, max_batch=max_batch)
+    raise ValueError(f"unknown server {name!r}; choose from {', '.join(SERVERS)}")
+
+
+def comparison(results: dict[str, Report]) -> str:
+    """One row per server, so the same traffic can be read across them."""
+    header = ("server", "tokens/s", "TTFT p50", "TTFT p95", "latency p50", "latency p95")
+    rows = [header] + [
+        (
+            name,
+            f"{r.tokens_per_second:.1f}",
+            f"{r.ttft_p50:.3f} s",
+            f"{r.ttft_p95:.3f} s",
+            f"{r.latency_p50:.3f} s",
+            f"{r.latency_p95:.3f} s",
+        )
+        for name, r in results.items()
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(len(header))]
+    return "\n".join(
+        "  ".join(
+            cell.ljust(width) if i == 0 else cell.rjust(width)
+            for i, (cell, width) in enumerate(zip(row, widths, strict=True))
+        )
+        for row in rows
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="llm-loadtest", description="Replay seeded traffic against a simulated server."
     )
-    parser.add_argument("--server", choices=sorted(SERVERS), default="one-at-a-time")
+    parser.add_argument("--server", choices=[*SERVERS, "all"], default="one-at-a-time")
+    parser.add_argument("--max-batch", type=int, default=8, help="sequences per forward pass")
     parser.add_argument("--schedule", choices=["poisson", "constant", "burst"], default="poisson")
     parser.add_argument("--rate", type=float, default=2.0, help="requests per second")
     parser.add_argument("--requests", type=int, default=200)
@@ -175,14 +213,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         requests = constant(args.rate, args.requests, args.seed)
     else:
         requests = poisson(args.rate, args.requests, args.seed)
-    result = run(
-        SERVERS[args.server],
-        requests,
-        step_cost=args.step_cost,
-        per_sequence_cost=args.per_sequence_cost,
-    )
-    print(f"server {args.server}, {args.schedule} traffic, seed {args.seed} (simulated time)")
-    print(result.table())
+    names = SERVERS if args.server == "all" else (args.server,)
+    results = {
+        name: run(
+            server(name, args.max_batch),
+            requests,
+            step_cost=args.step_cost,
+            per_sequence_cost=args.per_sequence_cost,
+        )
+        for name in names
+    }
+    print(f"{args.schedule} traffic, {args.requests} requests, seed {args.seed} (simulated time)")
+    if args.server == "all":
+        print(comparison(results))
+    else:
+        print(f"server {args.server}")
+        print(results[args.server].table())
     return 0
 
 
