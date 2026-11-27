@@ -78,5 +78,7 @@ def test_the_same_traffic_gives_the_same_numbers() -> None:
 def test_cli_prints_the_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--requests", "20", "--rate", "1", "--seed", "7"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("server one-at-a-time, poisson traffic, seed 7 (simulated time)")
+    assert out.startswith(
+        "poisson traffic, 20 requests, seed 7 (simulated time)\nserver one-at-a-time"
+    )
     assert "TTFT p50 / p95" in out and "tokens/s" in out

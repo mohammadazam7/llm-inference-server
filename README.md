@@ -5,9 +5,9 @@ what the standard serving techniques buy: continuous batching, a paged key-value
 INT8 quantization and token streaming. Every technique is compared against a naive
 server that handles one request at a time, on the same hardware and the same load.
 
-> **Status:** milestone 1. The naive baseline, the load-test harness and the streaming
-> HTTP API are in place; batching comes next. No throughput or latency figure appears
-> here until the harness has produced it.
+> **Status:** milestone 2. The baseline, the load-test harness, the streaming HTTP API
+> and the batching schedulers are in place; the paged KV cache comes next. Every
+> throughput and latency figure here was produced by the harness, in simulated time.
 
 ## Why
 
@@ -62,14 +62,60 @@ with `llm-loadtest --rate <rate>`.
 Throughput stops at 83.3 tokens/s, one token per 12 ms step, because the baseline only
 ever runs a batch of one. A request needs about 1.6 s of model time on average, so above
 roughly 0.6 requests per second the queue grows without limit and time to first token
-is mostly waiting. That ceiling is what continuous batching (M2) is meant to lift.
+is mostly waiting. That ceiling is what batching lifts.
+
+## Batching, on the same traffic
+
+Three servers, the same 200 requests and the same simulated model (10 ms per forward
+pass plus 2 ms per sequence), at most 8 sequences per pass. Static batching fills a batch
+and runs it until its longest sequence is done. Continuous batching decides who is in the
+batch again at every step. Reproduce a rate with `llm-loadtest --server all --rate <rate>`.
+
+| Arrival rate | Server | Throughput | TTFT p50 | TTFT p95 | Latency p95 |
+|---|---|---|---|---|---|
+| 1 req/s | one at a time | 83.1 tokens/s | 42.4 s | 98.4 s | 101.4 s |
+| | static batches | 125.3 tokens/s | 1.3 s | 4.2 s | 7.6 s |
+| | continuous | 127.3 tokens/s | 0.022 s | 0.031 s | 4.1 s |
+| 2 req/s | one at a time | 83.3 tokens/s | 100.6 s | 196.1 s | 199.1 s |
+| | static batches | 174.3 tokens/s | 17.4 s | 40.8 s | 45.3 s |
+| | continuous | 243.4 tokens/s | 0.035 s | 2.2 s | 6.6 s |
+| 4 req/s | one at a time | 83.3 tokens/s | 130.3 s | 245.4 s | 248.4 s |
+| | static batches | 177.6 tokens/s | 44.2 s | 89.0 s | 92.4 s |
+| | continuous | 302.0 tokens/s | 12.4 s | 29.3 s | 33.5 s |
+
+At 2 requests per second the baseline is far behind and continuous batching
+answers in 35 ms at the median. Its ceiling is 8 tokens per 26 ms step, about 308
+tokens/s, and at 4 requests per second it reaches that and starts to queue too. Static
+batching stops near 178 tokens/s: a sequence that finishes early keeps its slot until the
+longest one in its batch is done, so much of each pass is spent on padding.
+
+### When batching does not help
+
+The gain above comes from the fixed 10 ms that a batch shares. On a model where a pass
+costs nothing fixed and 12 ms per sequence (one CPU core, roughly), the same comparison
+at 2 requests per second gives:
+
+| Server | Throughput | TTFT p50 | Latency p95 |
+|---|---|---|---|
+| one at a time | 83.3 tokens/s | 100.6 s | 199.1 s |
+| static batches | 49.1 tokens/s | 200.8 s | 417.1 s |
+| continuous | 83.3 tokens/s | 94.5 s | 206.9 s |
+
+Continuous batching buys no throughput here, and static batching is worse than no
+batching at all because the padding is now paid for in full. At a light 0.5 requests per
+second continuous batching still starts answering sooner (TTFT p50 0.047 s against
+1.7 s) but finishes the slowest requests later (latency p95 15.9 s against 10.1 s),
+because sequences that share a pass slow each other down. Whether batching pays depends
+on the hardware, which is the open question the design doc set out to answer
+(`--step-cost 0 --per-sequence-cost 0.012` reproduces these).
 
 These are simulated times from the cost model above, not measurements of real hardware.
 Real numbers come when the server runs tiny-llm checkpoints.
 
 ## The HTTP API
 
-`llm-serve` runs the baseline behind `POST /v1/generate`, with the simulated model
+`llm-serve` still runs the one-at-a-time baseline behind `POST /v1/generate` (the
+batcher goes behind it in the next milestone), with the simulated model
 sleeping for its step cost so the server takes real time like a real model would:
 
 ```bash
